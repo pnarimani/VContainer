@@ -9,21 +9,15 @@ namespace VContainer.SourceGenerator
     /// report). This is what flows through the incremental pipeline into <c>RegisterSourceOutput</c>
     /// so that unchanged inputs produce equal payloads and the final generation step is skipped.
     /// </summary>
-    sealed class GeneratedSource : IEquatable<GeneratedSource>
+    sealed class GeneratedSource(string hintName, string? source, EquatableArray<DiagnosticInfo> diagnostics)
+        : IEquatable<GeneratedSource>
     {
-        public string HintName { get; }
+        public string HintName { get; } = hintName;
 
         /// <summary>The generated source text, or null when emission was aborted (diagnostics only).</summary>
-        public string? Source { get; }
+        public string? Source { get; } = source;
 
-        public EquatableArray<DiagnosticInfo> Diagnostics { get; }
-
-        public GeneratedSource(string hintName, string? source, EquatableArray<DiagnosticInfo> diagnostics)
-        {
-            HintName = hintName;
-            Source = source;
-            Diagnostics = diagnostics;
-        }
+        public EquatableArray<DiagnosticInfo> Diagnostics { get; } = diagnostics;
 
         public bool Equals(GeneratedSource? other)
         {
@@ -99,23 +93,12 @@ namespace VContainer.SourceGenerator
     /// Value-equatable replacement for <see cref="Diagnostic"/>. <see cref="DiagnosticDescriptor"/>
     /// instances are static singletons (reference equatable), so caching them is safe.
     /// </summary>
-    sealed class DiagnosticInfo : IEquatable<DiagnosticInfo>
+    sealed class DiagnosticInfo(DiagnosticDescriptor descriptor, LocationInfo? location, params string[] messageArgs)
+        : IEquatable<DiagnosticInfo>
     {
-        public DiagnosticDescriptor Descriptor { get; }
-        public LocationInfo? Location { get; }
-        public EquatableArray<string> MessageArgs { get; }
-
-        public DiagnosticInfo(DiagnosticDescriptor descriptor, Location? location, params string[] messageArgs)
-            : this(descriptor, LocationInfo.CreateFrom(location), messageArgs)
-        {
-        }
-
-        public DiagnosticInfo(DiagnosticDescriptor descriptor, LocationInfo? location, params string[] messageArgs)
-        {
-            Descriptor = descriptor;
-            Location = location;
-            MessageArgs = new EquatableArray<string>(messageArgs);
-        }
+        public DiagnosticDescriptor Descriptor => descriptor;
+        public LocationInfo? Location => location;
+        public EquatableArray<string> MessageArgs => new(messageArgs);
 
         public Diagnostic ToDiagnostic()
         {

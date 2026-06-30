@@ -17,75 +17,54 @@ namespace VContainer.SourceGenerator
     /// avoid. The only observable trade-off is that a diagnostic on already-broken code may point at a
     /// stale offset until that type's shape actually changes.
     /// </summary>
-    sealed class InjectorModel : IEquatable<InjectorModel>
+    sealed class InjectorModel(
+        string typeName,
+        string fullTypeName,
+        string ns,
+        string symbolName,
+        bool isNested,
+        bool isAbstract,
+        bool isGenerics,
+        bool explicitInjectable,
+        bool isUnityComponent,
+        bool hasMultipleInjectConstructors,
+        bool constructorFound,
+        bool constructorCanBeCalled,
+        bool constructorIsGeneric,
+        EquatableArray<ParameterModel> constructorParameters,
+        EquatableArray<MemberModel> injectFields,
+        EquatableArray<MemberModel> injectProperties,
+        EquatableArray<MethodModel> injectMethods,
+        LocationInfo? location)
+        : IEquatable<InjectorModel>
     {
-        public string TypeName { get; }
-        public string FullTypeName { get; }
-        public string Namespace { get; }
-        public string SymbolName { get; }
+        public string TypeName { get; } = typeName;
+        public string FullTypeName { get; } = fullTypeName;
+        public string Namespace { get; } = ns;
+        public string SymbolName { get; } = symbolName;
 
-        public bool IsNested { get; }
-        public bool IsAbstract { get; }
-        public bool IsGenerics { get; }
-        public bool ExplicitInjectable { get; }
-        public bool IsUnityComponent { get; }
+        public bool IsNested { get; } = isNested;
+        public bool IsAbstract { get; } = isAbstract;
+        public bool IsGenerics { get; } = isGenerics;
+        public bool ExplicitInjectable { get; } = explicitInjectable;
+        public bool IsUnityComponent { get; } = isUnityComponent;
 
-        public bool HasMultipleInjectConstructors { get; }
-        public bool ConstructorFound { get; }
-        public bool ConstructorCanBeCalled { get; }
-        public bool ConstructorIsGeneric { get; }
-        public EquatableArray<ParameterModel> ConstructorParameters { get; }
+        public bool HasMultipleInjectConstructors { get; } = hasMultipleInjectConstructors;
+        public bool ConstructorFound { get; } = constructorFound;
+        public bool ConstructorCanBeCalled { get; } = constructorCanBeCalled;
+        public bool ConstructorIsGeneric { get; } = constructorIsGeneric;
+        public EquatableArray<ParameterModel> ConstructorParameters { get; } = constructorParameters;
 
-        public EquatableArray<MemberModel> InjectFields { get; }
-        public EquatableArray<MemberModel> InjectProperties { get; }
-        public EquatableArray<MethodModel> InjectMethods { get; }
+        public EquatableArray<MemberModel> InjectFields { get; } = injectFields;
+        public EquatableArray<MemberModel> InjectProperties { get; } = injectProperties;
+        public EquatableArray<MethodModel> InjectMethods { get; } = injectMethods;
 
-        public LocationInfo? Location { get; }
+        public LocationInfo? Location { get; } = location;
 
         public string HintName => FullTypeName
             .Replace("global::", "")
             .Replace("<", "_")
             .Replace(">", "_") + "GeneratedInjector.g.cs";
-
-        public InjectorModel(
-            string typeName,
-            string fullTypeName,
-            string @namespace,
-            string symbolName,
-            bool isNested,
-            bool isAbstract,
-            bool isGenerics,
-            bool explicitInjectable,
-            bool isUnityComponent,
-            bool hasMultipleInjectConstructors,
-            bool constructorFound,
-            bool constructorCanBeCalled,
-            bool constructorIsGeneric,
-            EquatableArray<ParameterModel> constructorParameters,
-            EquatableArray<MemberModel> injectFields,
-            EquatableArray<MemberModel> injectProperties,
-            EquatableArray<MethodModel> injectMethods,
-            LocationInfo? location)
-        {
-            TypeName = typeName;
-            FullTypeName = fullTypeName;
-            Namespace = @namespace;
-            SymbolName = symbolName;
-            IsNested = isNested;
-            IsAbstract = isAbstract;
-            IsGenerics = isGenerics;
-            ExplicitInjectable = explicitInjectable;
-            IsUnityComponent = isUnityComponent;
-            HasMultipleInjectConstructors = hasMultipleInjectConstructors;
-            ConstructorFound = constructorFound;
-            ConstructorCanBeCalled = constructorCanBeCalled;
-            ConstructorIsGeneric = constructorIsGeneric;
-            ConstructorParameters = constructorParameters;
-            InjectFields = injectFields;
-            InjectProperties = injectProperties;
-            InjectMethods = injectMethods;
-            Location = location;
-        }
 
         public bool Equals(InjectorModel? other)
         {
@@ -202,36 +181,25 @@ namespace VContainer.SourceGenerator
     }
 
     /// <summary>An [Inject] method. <see cref="Location"/> is excluded from equality.</summary>
-    sealed class MethodModel : IEquatable<MethodModel>
+    sealed class MethodModel(
+        string name,
+        bool isStatic,
+        string containingTypeFullName,
+        bool returnsVoid,
+        bool canBeCalled,
+        bool isGeneric,
+        EquatableArray<ParameterModel> parameters,
+        LocationInfo? location)
+        : IEquatable<MethodModel>
     {
-        public string Name { get; }
-        public bool IsStatic { get; }
-        public string ContainingTypeFullName { get; }
-        public bool ReturnsVoid { get; }
-        public bool CanBeCalled { get; }
-        public bool IsGeneric { get; }
-        public EquatableArray<ParameterModel> Parameters { get; }
-        public LocationInfo? Location { get; }
-
-        public MethodModel(
-            string name,
-            bool isStatic,
-            string containingTypeFullName,
-            bool returnsVoid,
-            bool canBeCalled,
-            bool isGeneric,
-            EquatableArray<ParameterModel> parameters,
-            LocationInfo? location)
-        {
-            Name = name;
-            IsStatic = isStatic;
-            ContainingTypeFullName = containingTypeFullName;
-            ReturnsVoid = returnsVoid;
-            CanBeCalled = canBeCalled;
-            IsGeneric = isGeneric;
-            Parameters = parameters;
-            Location = location;
-        }
+        public string Name { get; } = name;
+        public bool IsStatic { get; } = isStatic;
+        public string ContainingTypeFullName { get; } = containingTypeFullName;
+        public bool ReturnsVoid { get; } = returnsVoid;
+        public bool CanBeCalled { get; } = canBeCalled;
+        public bool IsGeneric { get; } = isGeneric;
+        public EquatableArray<ParameterModel> Parameters { get; } = parameters;
+        public LocationInfo? Location { get; } = location;
 
         public bool Equals(MethodModel? other) =>
             other is not null &&
