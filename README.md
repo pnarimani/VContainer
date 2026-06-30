@@ -52,7 +52,7 @@ Visit [vcontainer.hadashikick.jp](https://vcontainer.hadashikick.jp) to view the
 1. Navigate to your project's Packages folder and open the manifest.json file.
 2. Add this line below the "dependencies": { line
     - ```json title="Packages/manifest.json"
-      "jp.hadashikick.vcontainer": "https://github.com/hadashiA/VContainer.git?path=VContainer/Assets/VContainer#1.16.2",
+      "jp.hadashikick.vcontainer": "https://github.com/hadashiA/VContainer.git?path=VContainer/Assets/VContainer#1.18.0",
       ```
 3. UPM should now install the package.
 
@@ -124,13 +124,22 @@ public class ActorPresenter : IStartable
 {
     readonly CharacterService service;
     readonly ActorsView actorsView;
+    readonly IWeapon primaryWeapon;
+    readonly IWeapon secondaryWeapon;
+    readonly IWeapon specialWeapon;
 
     public ActorPresenter(
         CharacterService service,
-        ActorsView actorsView)
+        ActorsView actorsView,
+        [Key(WeaponType.Primary)] IWeapon primaryWeapon,
+        [Key(WeaponType.Secondary)] IWeapon secondaryWeapon,
+        [Key(WeaponType.Special)] IWeapon specialWeapon)
     {
         this.service = service;
         this.actorsView = actorsView;
+        this.primaryWeapon = primaryWeapon;
+        this.secondaryWeapon = secondaryWeapon;
+        this.specialWeapon = specialWeapon;
     }
 
     void IStartable.Start()
@@ -140,6 +149,7 @@ public class ActorPresenter : IStartable
 }
 ```
 
+You can also resolve with object-based Key directly from the container:
 
 - In this example, the routeSearch of CharacterService is automatically set as the instance of AStarRouteSearch when CharacterService is resolved.
 - Further, VContainer can have a Pure C# class as an entry point. (Various timings such as Start, Update, etc. can be specified.) This facilitates "separation of domain logic and presentation".

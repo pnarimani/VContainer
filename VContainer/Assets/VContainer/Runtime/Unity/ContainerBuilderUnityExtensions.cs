@@ -14,6 +14,12 @@ namespace VContainer.Unity
         {
             if (containerBuilder.Exists(typeof(EntryPointDispatcher), false)) return;
             containerBuilder.Register<EntryPointDispatcher>(Lifetime.Scoped);
+
+            if (!containerBuilder.Exists(typeof(EntryPointExceptionHandler)))
+            {
+                containerBuilder.RegisterEntryPointExceptionHandler(UnityEngine.Debug.LogException);
+            }
+
             containerBuilder.RegisterBuildCallback(container =>
             {
                 container.Resolve<EntryPointDispatcher>().Dispatch();
@@ -106,11 +112,21 @@ namespace VContainer.Unity
             return builder.Register<T>(lifetime).AsImplementedInterfaces();
         }
 
+        public static RegistrationBuilder RegisterEntryPoint<TInterface>(
+            this IContainerBuilder builder,
+            Func<IObjectResolver, TInterface> implementationConfiguration,
+            Lifetime lifetime)
+        {
+            EntryPointsBuilder.EnsureDispatcherRegistered(builder);
+            return builder.Register(new FuncRegistrationBuilder(container => implementationConfiguration(container),
+                typeof(TInterface), lifetime)).AsImplementedInterfaces();
+        }
+
         public static void RegisterEntryPointExceptionHandler(
             this IContainerBuilder builder,
             Action<Exception> exceptionHandler)
         {
-            builder.RegisterInstance(new EntryPointExceptionHandler(exceptionHandler));
+            builder.Register(c => new EntryPointExceptionHandler(exceptionHandler), Lifetime.Scoped);
         }
 
         public static RegistrationBuilder RegisterComponent<TInterface>(
@@ -119,7 +135,7 @@ namespace VContainer.Unity
         {
             var registrationBuilder = new ComponentRegistrationBuilder(component).As(typeof(TInterface));
             // Force inject execution
-            builder.RegisterBuildCallback(container => container.Resolve<TInterface>());
+            builder.RegisterBuildCallback(container => container.Resolve<TInterface>(registrationBuilder.Key));
             return builder.Register(registrationBuilder);
         }
 
@@ -138,7 +154,8 @@ namespace VContainer.Unity
                     container.Resolve(
                         registrationBuilder.InterfaceTypes != null
                             ? registrationBuilder.InterfaceTypes[0]
-                            : registrationBuilder.ImplementationType
+                            : registrationBuilder.ImplementationType,
+                        registrationBuilder.Key
                     );
                 }
             );
@@ -187,7 +204,7 @@ namespace VContainer.Unity
         {
             return builder.RegisterComponentInNewPrefab(typeof(T), prefab, lifetime);
         }
-        
+
         public static ComponentRegistrationBuilder RegisterComponentInNewPrefab<T>(
             this IContainerBuilder builder,
             Func<IObjectResolver, T> prefab,
@@ -196,7 +213,7 @@ namespace VContainer.Unity
         {
             return builder.Register(new ComponentRegistrationBuilder(prefab, typeof(T), lifetime));
         }
-        
+
         public static ComponentRegistrationBuilder RegisterComponentInNewPrefab<TInterface, TImplement>(
             this IContainerBuilder builder,
             Func<IObjectResolver, TImplement> prefab,
@@ -290,7 +307,7 @@ namespace VContainer.Unity
             Type refType = typeof(UnmanagedSystemReference<>);
             Type target = refType.MakeGenericType(typeof(T));
             var reference = (UnmanagedSystemReference)Activator.CreateInstance(target, system, world);
-            
+
             return builder.RegisterComponent(reference)
                 .As(target);
         }

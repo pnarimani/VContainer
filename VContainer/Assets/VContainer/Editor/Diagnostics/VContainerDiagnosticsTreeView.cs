@@ -6,6 +6,11 @@ using System.Linq;
 using UnityEditor.IMGUI.Controls;
 using VContainer.Diagnostics;
 using VContainer.Unity;
+#if UNITY_6000_2_OR_NEWER
+using TreeView = UnityEditor.IMGUI.Controls.TreeView<int>;
+using TreeViewItem = UnityEditor.IMGUI.Controls.TreeViewItem<int>;
+using TreeViewState = UnityEditor.IMGUI.Controls.TreeViewState<int>;
+#endif
 
 namespace VContainer.Editor.Diagnostics
 {
@@ -215,7 +220,13 @@ namespace VContainer.Editor.Diagnostics
             var item = args.item as DiagnosticsInfoTreeViewItem;
             if (item is null)
             {
-                base.RowGUI(args);
+                var cellRect = args.GetCellRect(0);
+                GUI.BeginGroup(cellRect);
+                {
+                    args.rowRect = new Rect(0, 0, cellRect.width, cellRect.height);
+                    base.RowGUI(args);
+                }
+                GUI.EndGroup();
                 return;
             }
 
@@ -231,7 +242,12 @@ namespace VContainer.Editor.Diagnostics
                 switch (columnIndex)
                 {
                     case 0:
-                        base.RowGUI(args);
+                        GUI.BeginGroup(cellRect);
+                        {
+                            args.rowRect = new Rect(0, 0, cellRect.width, cellRect.height);
+                            base.RowGUI(args);
+                        }
+                        GUI.EndGroup();
                         break;
                     case 1:
                         EditorGUI.LabelField(cellRect, item.ContractTypesSummary, labelStyle);

@@ -37,26 +37,7 @@ public class VContainerIncrementalSourceGenerator : IIncrementalGenerator
         // Find Types based on Register* methods
         var registerInvocations = context.SyntaxProvider
             .CreateSyntaxProvider(
-                (s, cancellation) =>
-                {
-                    if (s.IsKind(SyntaxKind.InvocationExpression))
-                    {
-                        if (s is InvocationExpressionSyntax
-                            {
-                                Expression: MemberAccessExpressionSyntax
-                                {
-                                    Expression: IdentifierNameSyntax
-                                } memberAccess
-                            })
-                        {
-                            if (memberAccess.Name.Identifier.Text.StartsWith("Register"))
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                    return false;
-                },
+                (s, cancellation) => Analyzer.IsRegisterSyntaxCandidate(s),
                 (ctx, cancellation) => ctx)
             .Combine(vcontainerReferenceValueProvider)
             .Where(tuple => tuple.Right)
@@ -112,7 +93,7 @@ public class VContainerIncrementalSourceGenerator : IIncrementalGenerator
                 var typeMetas = typeDeclarationCandidates
                     .Select(x => x.Analyze(references))
                     .Where(x => x != null &&
-                                (x.ExplictInjectConstructors.Count > 0 ||
+                                (x.ExplicitInjectConstructors.Count > 0 ||
                                  x.InjectFields.Count > 0 ||
                                  x.InjectProperties.Count > 0 ||
                                  x.InjectMethods.Count > 0));

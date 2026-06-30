@@ -16,7 +16,7 @@ jobs:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       NUGET_XMLDOC_MODE: skip
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v3
         with:
           dotnet-version: 8.0.x
@@ -50,8 +50,8 @@ jobs:
         #   license: UNITY_LICENSE_2018_4
         #   externalPackage: 'None'
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: actions/checkout@v4
+    - uses: actions/cache@v4
       with:
         path: VContainer/Library
         key: Library-VContainer-${{ matrix.unityVersion }}-${{ matrix.feature }}
@@ -84,7 +84,3 @@ jobs:
         projectPath: ./VContainer
         unityVersion: ${{ matrix.unityVersion }}
         # customParameters: -testSettingsFile ./testSettings.json
-    - uses: actions/upload-artifact@v2
-      with:
-        name: Test results
-        path: artifacts

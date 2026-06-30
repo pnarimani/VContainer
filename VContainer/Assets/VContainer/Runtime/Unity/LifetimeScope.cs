@@ -63,9 +63,9 @@ namespace VContainer.Unity
         static readonly Stack<IInstaller> GlobalExtraInstallers = new Stack<IInstaller>();
         static readonly object SyncRoot = new object();
 
-        static LifetimeScope Create(IInstaller installer = null)
+        public static LifetimeScope Create(IInstaller installer = null, string name = null)
         {
-            var gameObject = new GameObject("LifetimeScope");
+            var gameObject = new GameObject(name ?? "LifetimeScope");
             gameObject.SetActive(false);
             var newScope = gameObject.AddComponent<LifetimeScope>();
             if (installer != null)
@@ -76,8 +76,8 @@ namespace VContainer.Unity
             return newScope;
         }
 
-        public static LifetimeScope Create(Action<IContainerBuilder> configuration)
-            => Create(new ActionInstaller(configuration));
+        public static LifetimeScope Create(Action<IContainerBuilder> configuration, string name = null)
+            => Create(new ActionInstaller(configuration), name);
 
         public static ParentOverrideScope EnqueueParent(LifetimeScope parent)
             => new ParentOverrideScope(parent);
@@ -136,11 +136,14 @@ namespace VContainer.Unity
         {
             if (VContainerSettings.DiagnosticsEnabled && string.IsNullOrEmpty(scopeName))
             {
+#if UNITY_6000_4_OR_NEWER
+                scopeName = $"{name} ({gameObject.GetEntityId()})";
+#else
                 scopeName = $"{name} ({gameObject.GetInstanceID()})";
+#endif
             }
             try
             {
-                Parent = GetRuntimeParent();
                 if (autoRun)
                 {
                     Build();
@@ -226,19 +229,13 @@ namespace VContainer.Unity
             AutoInjectAll();
         }
 
-        public TScope CreateChild<TScope>(IInstaller installer = null)
+        public TScope CreateChild<TScope>(IInstaller installer = null, string childScopeName = null)
             where TScope : LifetimeScope
         {
-            var childGameObject = new GameObject("LifetimeScope (Child)");
+            var childGameObject = new GameObject(childScopeName ?? "LifetimeScope (Child)");
             childGameObject.SetActive(false);
-            if (IsRoot)
-            {
-                DontDestroyOnLoad(childGameObject);
-            }
-            else
-            {
-                childGameObject.transform.SetParent(transform, false);
-            }
+            childGameObject.transform.SetParent(transform, false);
+
             var child = childGameObject.AddComponent<TScope>();
             if (installer != null)
             {
@@ -249,36 +246,39 @@ namespace VContainer.Unity
             return child;
         }
 
-        public LifetimeScope CreateChild(IInstaller installer = null)
-            => CreateChild<LifetimeScope>(installer);
+        public LifetimeScope CreateChild(IInstaller installer = null, string childScopeName = null)
+            => CreateChild<LifetimeScope>(installer, childScopeName);
 
-        public TScope CreateChild<TScope>(Action<IContainerBuilder> installation)
+        public TScope CreateChild<TScope>(Action<IContainerBuilder> installation, string childScopeName = null)
             where TScope : LifetimeScope
-            => CreateChild<TScope>(new ActionInstaller(installation));
+            => CreateChild<TScope>(new ActionInstaller(installation), childScopeName);
 
-        public LifetimeScope CreateChild(Action<IContainerBuilder> installation)
-            => CreateChild<LifetimeScope>(new ActionInstaller(installation));
+        public LifetimeScope CreateChild(Action<IContainerBuilder> installation, string childScopeName = null)
+            => CreateChild<LifetimeScope>(new ActionInstaller(installation), childScopeName);
 
         public TScope CreateChildFromPrefab<TScope>(TScope prefab, IInstaller installer = null)
             where TScope : LifetimeScope
         {
             var wasActive = prefab.gameObject.activeSelf;
-            if (wasActive)
+            using (new ObjectResolverUnityExtensions.PrefabDirtyScope(prefab.gameObject))
             {
-                prefab.gameObject.SetActive(false);
+                if (wasActive)
+                {
+                    prefab.gameObject.SetActive(false);
+                }
+                var child = Instantiate(prefab, transform, false);
+                if (installer != null)
+                {
+                    child.localExtraInstallers.Add(installer);
+                }
+                child.parentReference.Object = this;
+                if (wasActive)
+                {
+                    prefab.gameObject.SetActive(true);
+                    child.gameObject.SetActive(true);
+                }
+                return child;
             }
-            var child = Instantiate(prefab, transform, false);
-            if (installer != null)
-            {
-                child.localExtraInstallers.Add(installer);
-            }
-            child.parentReference.Object = this;
-            if (wasActive)
-            {
-                prefab.gameObject.SetActive(true);
-                child.gameObject.SetActive(true);
-            }
-            return child;
         }
 
         public TScope CreateChildFromPrefab<TScope>(TScope prefab, Action<IContainerBuilder> installation)
@@ -315,7 +315,7 @@ namespace VContainer.Unity
 
             if (parentReference.Object != null)
                 return parentReference.Object;
-            
+
             // Find via implementation
             var implParent = FindParent();
             if (implParent != null)

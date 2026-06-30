@@ -5,6 +5,11 @@ using System.Runtime.CompilerServices;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 using VContainer.Diagnostics;
+#if UNITY_6000_2_OR_NEWER
+using TreeView = UnityEditor.IMGUI.Controls.TreeView<int>;
+using TreeViewItem = UnityEditor.IMGUI.Controls.TreeViewItem<int>;
+using TreeViewState = UnityEditor.IMGUI.Controls.TreeViewState<int>;
+#endif
 
 namespace VContainer.Editor.Diagnostics
 {
@@ -68,9 +73,17 @@ namespace VContainer.Editor.Diagnostics
 
                 try
                 {
-                    var value = prop.GetValue(instance);
-                    var displayName = $"{prop.Name} = ({TypeNameHelper.GetTypeAlias(prop.PropertyType)}) {Stringify(value)}";
-                    parent.AddChild(new TreeViewItem(NextId(), parent.depth + 1, displayName));
+                    if (prop.CanRead)
+                    {
+                        var value = prop.GetValue(instance);
+                        var displayName = $"{prop.Name} = ({TypeNameHelper.GetTypeAlias(prop.PropertyType)}) {Stringify(value)}";
+                        parent.AddChild(new TreeViewItem(NextId(), parent.depth + 1, displayName));
+                    }
+                    else
+                    {
+                        var displayName = $"{prop.Name} = (write-only {TypeNameHelper.GetTypeAlias(prop.PropertyType)})";
+                        parent.AddChild(new TreeViewItem(NextId(), parent.depth + 1, displayName));
+                    }
                 }
                 catch (MissingReferenceException)
                 {
