@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -8,9 +10,13 @@ namespace VContainer.SourceGenerator;
 [Generator]
 public class VContainerIncrementalSourceGenerator : IIncrementalGenerator
 {
+    /// <summary>Tracking name of the emit (source-string assembly) step, used by incremental-cache tests.</summary>
+    public const string EmitStepName = "VContainerInjectorEmit";
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Assembly filter
+        // Assembly filter. Produces an equatable `bool`, so combining it into the per-node pipeline
+        // does not invalidate node-level caching (it only changes when the bool itself flips).
         var vcontainerReferenceValueProvider = context.CompilationProvider
             .Select((compilation, cancellation) =>
             {
@@ -34,88 +40,141 @@ public class VContainerIncrementalSourceGenerator : IIncrementalGenerator
                 return false;
             });
 
-        // Find Types based on Register* methods
-        var registerInvocations = context.SyntaxProvider
+        // STAGE 1 (semantic analysis): syntax + symbols -> a small, fully value-equatable InjectorModel.
+        // Because the model is equatable AND excludes source locations from equality, an edit that does
+        // not change the injection shape (constructor / [Inject] members / registered type) produces an
+        // equal model.
+        //
+        // STAGE 2 (emit) is a SEPARATE `Select`, so when STAGE 1's model is unchanged the emit (source
+        // string assembly) is served from cache and skipped entirely — not just the final AddSource.
+        var typeDeclarationModels = context.SyntaxProvider
             .CreateSyntaxProvider(
-                (s, cancellation) => Analyzer.IsRegisterSyntaxCandidate(s),
-                (ctx, cancellation) => ctx)
+                static (node, _) => IsTypeDeclarationCandidate(node),
+                static (ctx, cancellation) => TransformTypeDeclaration(ctx, cancellation))
             .Combine(vcontainerReferenceValueProvider)
-            .Where(tuple => tuple.Right)
-            .Select((tuple, cancellation) =>
-            {
-                var invocationExpressionSyntax = (InvocationExpressionSyntax)tuple.Left.Node;
-                var semanticModel = tuple.Left.SemanticModel;
-                return new RegisterInvocationCandidate(invocationExpressionSyntax, semanticModel);
-            });
+            .Where(static tuple => tuple is { Right: true, Left: not null })
+            .Select(static (tuple, _) => tuple.Left!);
 
-        // Find types by explicit [Inject]
-        var typeDeclarations = context.SyntaxProvider
-            .CreateSyntaxProvider((s, cancellation) =>
-                {
-                    if (!s.IsKind(SyntaxKind.ClassDeclaration)) return false;
-                    if (s is not ClassDeclarationSyntax syntax) return false;
+        var typeDeclarationSources = typeDeclarationModels
+            .Select(static (model, _) => EmitToGeneratedSource(model))
+            .WithTrackingName(EmitStepName)
+            .Collect();
 
-                    if (syntax.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.AbstractKeyword) ||
-                                                         modifier.IsKind(SyntaxKind.StaticKeyword)))
-                    {
-                        return false;
-                    }
-
-                    return true;
-                },
-                (ctx, cancellation) => ctx)
+        var registerInvocationModels = context.SyntaxProvider
+            .CreateSyntaxProvider(
+                static (node, _) => Analyzer.IsRegisterSyntaxCandidate(node),
+                static (ctx, cancellation) => TransformRegisterInvocation(ctx, cancellation))
             .Combine(vcontainerReferenceValueProvider)
-            .Where(tuple => tuple.Right)
-            .Select((tuple, cancellatio) =>
-            {
-                return new TypeDeclarationCandidate((TypeDeclarationSyntax)tuple.Left.Node, tuple.Left.SemanticModel);
-            });
+            .Where(static tuple => tuple.Right)
+            .Select(static (tuple, _) => tuple.Left);
 
-        // Generate the source code.
+        var registerInvocationSources = registerInvocationModels
+            .Select(static (models, _) =>
+                new EquatableArray<GeneratedSource>(models.Select(EmitToGeneratedSource).ToArray()))
+            .WithTrackingName(EmitStepName)
+            .Collect();
+
+        // The final step consumes ONLY value-equatable data (no Compilation / SemanticModel / symbols),
+        // so when nothing relevant changed the collected arrays compare equal and this is skipped.
         context.RegisterSourceOutput(
-            context.CompilationProvider
-                .Combine(typeDeclarations.Collect())
-                .Combine(registerInvocations.Collect()),
-            (sourceProductionContext, tuple) =>
+            typeDeclarationSources.Combine(registerInvocationSources),
+            static (sourceProductionContext, tuple) =>
             {
-                var compilation = tuple.Left.Left;
-                var typeDeclarationCandidates = tuple.Left.Right;
-                var registerInvocationCandidates = tuple.Right;
-
-                var references = ReferenceSymbols.Create(compilation);
-                if (references is null)
+                var emitted = new HashSet<string>();
+                foreach (var generated in tuple.Left)
                 {
-                    return;
+                    EmitOne(sourceProductionContext, generated, emitted);
                 }
-
-                var codeWriter = new CodeWriter();
-
-                var typeMetas = typeDeclarationCandidates
-                    .Select(x => x.Analyze(references))
-                    .Where(x => x != null &&
-                                (x.ExplicitInjectConstructors.Count > 0 ||
-                                 x.InjectFields.Count > 0 ||
-                                 x.InjectProperties.Count > 0 ||
-                                 x.InjectMethods.Count > 0));
-
-                var typeMetasFromRegister = registerInvocationCandidates
-                    .SelectMany(x => x.Analyze(references));
-
-                foreach (var typeMeta in typeMetas
-                             .Concat(typeMetasFromRegister)
-                             .Where(x => x != null)
-                             .DistinctBy(x => x!.Symbol, SymbolEqualityComparer.Default))
+                foreach (var group in tuple.Right)
                 {
-                    if (Emitter.TryEmitGeneratedInjector(typeMeta!, codeWriter, references, in sourceProductionContext))
+                    foreach (var generated in group)
                     {
-                        var fullType = typeMeta!.FullTypeName
-                            .Replace("global::", "")
-                            .Replace("<", "_")
-                            .Replace(">", "_");
-                        sourceProductionContext.AddSource($"{fullType}GeneratedInjector.g.cs", codeWriter.ToString());
+                        EmitOne(sourceProductionContext, generated, emitted);
                     }
-                    codeWriter.Clear();
                 }
             });
+    }
+
+    static void EmitOne(SourceProductionContext context, GeneratedSource generated, HashSet<string> emitted)
+    {
+        // Dedupe by hint name so a type that is both explicitly injectable and registered
+        // (or registered from multiple places) is only emitted/reported once.
+        if (!emitted.Add(generated.HintName))
+        {
+            return;
+        }
+
+        foreach (var diagnostic in generated.Diagnostics)
+        {
+            context.ReportDiagnostic(diagnostic.ToDiagnostic());
+        }
+
+        if (generated.Source != null)
+        {
+            context.AddSource(generated.HintName, generated.Source);
+        }
+    }
+
+    static bool IsTypeDeclarationCandidate(SyntaxNode node)
+    {
+        if (!node.IsKind(SyntaxKind.ClassDeclaration)) return false;
+        if (node is not ClassDeclarationSyntax syntax) return false;
+
+        if (syntax.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.AbstractKeyword) ||
+                                             modifier.IsKind(SyntaxKind.StaticKeyword)))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    static InjectorModel? TransformTypeDeclaration(GeneratorSyntaxContext ctx, CancellationToken cancellation)
+    {
+        var references = ReferenceSymbols.Create(ctx.SemanticModel.Compilation);
+        if (references is null)
+        {
+            return null;
+        }
+
+        var candidate = new TypeDeclarationCandidate((TypeDeclarationSyntax)ctx.Node, ctx.SemanticModel);
+        var typeMeta = candidate.Analyze(references, cancellation);
+
+        // Only explicitly-injectable types get an injector from a bare declaration.
+        if (typeMeta is null || !typeMeta.ExplicitInjectable)
+        {
+            return null;
+        }
+        return InjectorModelBuilder.Build(typeMeta, references);
+    }
+
+    static EquatableArray<InjectorModel> TransformRegisterInvocation(GeneratorSyntaxContext ctx, CancellationToken cancellation)
+    {
+        var references = ReferenceSymbols.Create(ctx.SemanticModel.Compilation);
+        if (references is null)
+        {
+            return EquatableArray<InjectorModel>.Empty;
+        }
+
+        var candidate = new RegisterInvocationCandidate((InvocationExpressionSyntax)ctx.Node, ctx.SemanticModel);
+        var models = new List<InjectorModel>();
+        foreach (var typeMeta in candidate.Analyze(references, cancellation))
+        {
+            models.Add(InjectorModelBuilder.Build(typeMeta, references));
+        }
+        return models.Count == 0
+            ? EquatableArray<InjectorModel>.Empty
+            : new EquatableArray<InjectorModel>(models.ToArray());
+    }
+
+    static GeneratedSource EmitToGeneratedSource(InjectorModel model)
+    {
+        var diagnostics = new List<DiagnosticInfo>();
+        var codeWriter = new CodeWriter();
+        var ok = Emitter.TryEmitGeneratedInjector(model, codeWriter, diagnostics);
+
+        return new GeneratedSource(
+            model.HintName,
+            ok ? codeWriter.ToString() : null,
+            new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
     }
 }

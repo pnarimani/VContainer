@@ -89,7 +89,7 @@ static class Analyzer
     }
 }
 
-record struct TypeDeclarationCandidate(TypeDeclarationSyntax Syntax, SemanticModel SemanticModel)
+readonly record struct TypeDeclarationCandidate(TypeDeclarationSyntax Syntax, SemanticModel SemanticModel)
 {
     public TypeMeta? Analyze(ReferenceSymbols referenceSymbols, CancellationToken cancellation = default)
     {
@@ -100,7 +100,7 @@ record struct TypeDeclarationCandidate(TypeDeclarationSyntax Syntax, SemanticMod
     }
 }
 
-record struct RegisterInvocationCandidate(InvocationExpressionSyntax Syntax, SemanticModel SemanticModel)
+readonly record struct RegisterInvocationCandidate(InvocationExpressionSyntax Syntax, SemanticModel SemanticModel)
 {
     public IEnumerable<TypeMeta> Analyze(ReferenceSymbols referenceSymbols, CancellationToken cancellation = default)
     {
