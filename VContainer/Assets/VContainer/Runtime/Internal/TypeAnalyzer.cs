@@ -374,9 +374,12 @@ namespace VContainer.Internal
         public static void CheckCircularDependency(IReadOnlyList<Registration> registrations, Registry registry)
         {
             // ThreadStatic
-            circularDependencyChecker ??= new Stack<DependencyInfo>();
-            visitingTypes ??= new HashSet<Type>();
-            verifiedTypes ??= new HashSet<Type>();
+            if (circularDependencyChecker == null)
+                circularDependencyChecker = new Stack<DependencyInfo>();
+            if (visitingTypes == null)
+                visitingTypes = new HashSet<Type>();
+            if (verifiedTypes == null)
+                verifiedTypes = new HashSet<Type>();
 
             visitingTypes.Clear();
             verifiedTypes.Clear();
@@ -388,18 +391,19 @@ namespace VContainer.Internal
             }
         }
 
-        static void CheckCircularDependencyRecursive(DependencyInfo current, Registry registry, Stack<DependencyInfo> stack)
+        // Returns false if a Func-provided cycle was skipped in the subtree, so the result must not be memoized.
+        static bool CheckCircularDependencyRecursive(DependencyInfo current, Registry registry, Stack<DependencyInfo> stack)
         {
             var currentType = current.ImplementationType;
 
             if (verifiedTypes.Contains(currentType))
-                return;
+                return true;
 
             if (!visitingTypes.Add(currentType))
             {
                 // When instantiated by Func, the abstract type cycle is user-avoidable.
                 if (current.Dependency.Provider is FuncInstanceProvider)
-                    return;
+                    return false;
 
                 stack.Push(current);
 
@@ -420,6 +424,7 @@ namespace VContainer.Internal
             }
 
             stack.Push(current);
+            var verified = true;
 
             if (Cache.TryGetValue(current.ImplementationType, out var injectTypeInfo))
             {
@@ -433,7 +438,7 @@ namespace VContainer.Internal
                             : null;
                         if (registry.TryGet(x.ParameterType, key, out var parameterRegistration))
                         {
-                            CheckCircularDependencyRecursive(new DependencyInfo(parameterRegistration, current.Dependency, injectTypeInfo.InjectConstructor.ConstructorInfo, x), registry, stack);
+                            verified &= CheckCircularDependencyRecursive(new DependencyInfo(parameterRegistration, current.Dependency, injectTypeInfo.InjectConstructor.ConstructorInfo, x), registry, stack);
                         }
                     }
                 }
@@ -450,7 +455,7 @@ namespace VContainer.Internal
                                 : null;
                             if (registry.TryGet(x.ParameterType, key, out var parameterRegistration))
                             {
-                                CheckCircularDependencyRecursive(new DependencyInfo(parameterRegistration, current.Dependency, methodInfo.MethodInfo, x), registry, stack);
+                                verified &= CheckCircularDependencyRecursive(new DependencyInfo(parameterRegistration, current.Dependency, methodInfo.MethodInfo, x), registry, stack);
                             }
                         }
                     }
@@ -462,7 +467,7 @@ namespace VContainer.Internal
                     {
                         if (registry.TryGet(x.FieldType, x.Key, out var fieldRegistration))
                         {
-                            CheckCircularDependencyRecursive(new DependencyInfo(fieldRegistration, current.Dependency, x.FieldInfo), registry, stack);
+                            verified &= CheckCircularDependencyRecursive(new DependencyInfo(fieldRegistration, current.Dependency, x.FieldInfo), registry, stack);
                         }
                     }
                 }
@@ -473,7 +478,7 @@ namespace VContainer.Internal
                     {
                         if (registry.TryGet(x.PropertyType, x.Key, out var propertyRegistration))
                         {
-                            CheckCircularDependencyRecursive(new DependencyInfo(propertyRegistration, current.Dependency, x.PropertyInfo), registry, stack);
+                            verified &= CheckCircularDependencyRecursive(new DependencyInfo(propertyRegistration, current.Dependency, x.PropertyInfo), registry, stack);
                         }
                     }
                 }
@@ -481,7 +486,9 @@ namespace VContainer.Internal
 
             stack.Pop();
             visitingTypes.Remove(currentType);
-            verifiedTypes.Add(currentType);
+            if (verified)
+                verifiedTypes.Add(currentType);
+            return verified;
         }
     }
 }

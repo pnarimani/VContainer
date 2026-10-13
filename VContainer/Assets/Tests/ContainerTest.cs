@@ -570,6 +570,44 @@ namespace VContainer.Tests
             }
         }
 
+        // Nested so the source generator skips them and the reflection-based cycle check runs.
+        interface IFuncCycleA
+        {
+        }
+
+        class FuncCycleA : IFuncCycleA
+        {
+            public FuncCycleA(FuncCycleB b)
+            {
+            }
+        }
+
+        class FuncCycleB
+        {
+            public FuncCycleB(IFuncCycleA a)
+            {
+            }
+        }
+
+        [Test]
+        public void CircularDependencyThroughFuncIsDetectedRegardlessOfOrder()
+        {
+            {
+                var builder = new ContainerBuilder();
+                builder.Register<FuncCycleA>(Lifetime.Transient);
+                builder.Register(_ => new FuncCycleA(null), Lifetime.Transient).As<IFuncCycleA>();
+                builder.Register<FuncCycleB>(Lifetime.Transient);
+                Assert.Throws<VContainerException>(() => builder.Build());
+            }
+            {
+                var builder = new ContainerBuilder();
+                builder.Register<FuncCycleB>(Lifetime.Transient);
+                builder.Register<FuncCycleA>(Lifetime.Transient);
+                builder.Register(_ => new FuncCycleA(null), Lifetime.Transient).As<IFuncCycleA>();
+                Assert.Throws<VContainerException>(() => builder.Build());
+            }
+        }
+
         [Test]
         public void SelfCircularDependency()
         {
